@@ -181,25 +181,30 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
 
         lines.push("");
         lines.push("Geometry counts:");
-        lines.push(`  connector3:   ${connectors.length}`);
+        lines.push(`  Connectors:   ${connectors.length}`);
 
-        // Segment connectors by type (connectorKind)
-        if (connectors.length > 0) {
+        // Segment connectors by type (connectorKind) — include both connector3 and connector45 entries
+        if (connectors.length > 0 || connector45s.length > 0) {
             const connectorsByKind = new Map<string, number>();
             for (const conn of connectors) {
-                const kind = conn.connectorKind;
+                const kind = (conn as any).connectorKind ?? "unknown";
                 connectorsByKind.set(kind, (connectorsByKind.get(kind) ?? 0) + 1);
             }
-            lines.push("    by type:");
-            const sortedKinds = Array.from(connectorsByKind.keys()).sort();
-            for (const kind of sortedKinds) {
-                const count = connectorsByKind.get(kind)!;
-                lines.push(`      ${kind}: ${count}`);
+            for (const conn of connector45s) {
+                const kind = (conn as any).connectorKind ?? "45";
+                connectorsByKind.set(kind, (connectorsByKind.get(kind) ?? 0) + 1);
+            }
+            if (connectorsByKind.size > 0) {
+                lines.push("    by type:");
+                const sortedKinds = Array.from(connectorsByKind.keys()).sort();
+                for (const kind of sortedKinds) {
+                    const count = connectorsByKind.get(kind)!;
+                    lines.push(`      ${kind}: ${count}`);
+                }
             }
         }
 
-        lines.push(`  connector45_2:${connector45s.length}`);
-        lines.push(`  tube2:        ${tubes.length}`);
+        lines.push(`  Tubes:        ${tubes.length}`);
 
         // Segment tubes by length
         if (tubes.length > 0) {
@@ -216,7 +221,27 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
             }
         }
 
-        lines.push(`  panel2:       ${panels.length}`);
+        lines.push(`  Panels:       ${panels.length}`);
+        // Segment panels by size using dim1 and dim3
+        if (panels.length > 0) {
+            const panelsBySize = new Map<string, number>();
+            for (const p of panels) {
+                const key = `${p.dim1} x ${p.dim3}`;
+                panelsBySize.set(key, (panelsBySize.get(key) ?? 0) + 1);
+            }
+            if (panelsBySize.size > 0) {
+                lines.push("    by size (dim1 x dim3):");
+                const sortedKeys = Array.from(panelsBySize.keys()).sort((a, b) => {
+                    const [aDim, aDim3] = a.split(' x ').map(Number);
+                    const [bDim, bDim3] = b.split(' x ').map(Number);
+                    return aDim - bDim || aDim3 - bDim3;
+                });
+                for (const key of sortedKeys) {
+                    const count = panelsBySize.get(key)!;
+                    lines.push(`      ${key}: ${count}`);
+                }
+            }
+        }
         lines.push(`  display2:     ${displayPanels.length}`);
         lines.push(`  textil2:      ${textiles.length}`);
         lines.push(`  clamp2:       ${clamps.length}`);

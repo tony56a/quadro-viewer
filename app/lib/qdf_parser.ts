@@ -360,6 +360,7 @@ function parseConnector45Line(line: string): QdfConnector45 | null {
         position: positionVector,
         quaternion: quaternion,
         connectorType,
+        connectorKind: QdfConnectorKind.FOURTY_FIVE_DEGREE_CONNECTOR,
         flag1,
         flag2,
     };

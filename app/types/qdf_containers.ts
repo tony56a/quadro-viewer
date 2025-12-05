@@ -30,6 +30,7 @@ export enum QdfConnectorKind {
     CROSS_CONNECTOR = "CROSS_CONNECTOR",
     FIVE_WAY_CONNECTOR = "FIVE_WAY_CONNECTOR",
     HUB_CONNECTOR = "HUB_CONNECTOR",
+    FOURTY_FIVE_DEGREE_CONNECTOR = "FOURTY_FIVE_DEGREE_CONNECTOR",
     INVALID = "INVALID",
 }
 
@@ -50,6 +51,8 @@ export interface QdfConnector45 extends QdfGeomBase {
     connectorType: number;
     flag1: number;
     flag2: number;
+
+    connectorKind: QdfConnectorKind;
 }
 
 export interface QdfTube extends QdfGeomBase {

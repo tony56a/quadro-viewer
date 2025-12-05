@@ -65,6 +65,75 @@ export function renderConnectors(
         return mesh;
     };
 
+    /**
+     * Create a 45-style connector: a central sphere, a rod extending along +X
+     * for 60 units, and a second rod attached to the end of the first rod which
+     * is rotated by 45 degrees. By default the second rod is rotated around the
+     * Y axis (so it tilts in the XZ plane). If you want rotation about the X
+     * axis instead, change the rotationAxis to (1,0,0).
+     */
+    const make45Connector = (conn: QdfConnector45) => {
+        const group = new THREE.Group();
+
+        const mat =
+            materials.get(conn.id) ||
+            new THREE.MeshStandardMaterial({ color: 0xcccccc });
+
+        // Sphere at center (reuse sphere geometry)
+        const sphereGeom = new THREE.SphereGeometry(radius * 0.9, 20, 20);
+        const sphere = new THREE.Mesh(sphereGeom, mat);
+        group.add(sphere);
+
+        // First rod: along +X for 60 units
+        const rodLength = 60; // units consistent with existing code (mm)
+        const rodRadius = 14;
+        const rodGeom = new THREE.CylinderGeometry(rodRadius, rodRadius, rodLength * 1.5, 16);
+        const rod1 = new THREE.Mesh(rodGeom, mat);
+        // Align cylinder to X axis (default is Y-up)
+        rod1.rotation.z = Math.PI / 2;
+        // Position so one end starts at sphere surface: center offset = radius + rodLength/2
+        rod1.position.x = radius + rodLength / 2;
+        group.add(rod1);
+
+        // Second rod: attached at the end of first rod and rotated by 45 degrees
+        const rod2 = new THREE.Mesh(rodGeom, mat);
+        // Start by aligning along X like rod1
+        rod2.rotation.z = Math.PI / 2;
+        // Rotate rod2 by 45 degrees around Y axis so it angles in XZ plane
+        const fortyFive = (45 * Math.PI) / 180;
+        rod2.rotateZ(-fortyFive);
+        // Compute the attachment point: end of first rod is at x = radius + rodLength
+        const attachX = radius + rodLength;
+        // After rotation, we need to position the rod center along its local X by rodLength/2
+        // rod2 local X in world = (cos45, 0, sin45)
+        const dx = Math.cos(fortyFive) * (rodLength / 2);
+        const dz = Math.sin(fortyFive) * (rodLength / 2);
+        rod2.position.set(attachX + dx - (rodLength / 2), 0, dz);
+        rod2.translateX(radius * 1.25);
+        rod2.translateY(radius);
+        rod2.translateZ(-radius);
+
+        // The above subtracts (rodLength/2) to account for the fact that rod1 was placed
+        // using a simple x offset; ensure the second rod visually starts where the first ends.
+        group.add(rod2);
+
+        // Position and orientation for the whole group
+        group.position.set(
+            conn.orientation.x,
+            conn.orientation.y,
+            conn.orientation.z,
+        );
+
+        const q = new THREE.Quaternion(conn.quaternion.x, conn.quaternion.y, conn.quaternion.z, conn.quaternion.w);
+        const zAxis = new THREE.Vector3(0, 0, -1);
+        const zRotation = new THREE.Quaternion().setFromAxisAngle(zAxis, Math.PI / 2);
+
+        group.quaternion.copy(q.multiply(zRotation).normalize());
+        group.userData.connector = conn;
+
+        return group;
+    };
+
     const makeConnector = (conn: QdfConnector3) => {
         const group = new THREE.Group();
 
@@ -80,7 +149,7 @@ export function renderConnectors(
 
         directions.forEach(dir => {
             const armGeometry = new THREE.CylinderGeometry(
-                10, 10, 40, 16
+                15, 15, 60, 16
             );
             const arm = new THREE.Mesh(armGeometry, mat);
 
@@ -111,7 +180,6 @@ export function renderConnectors(
         const zAxis = new THREE.Vector3(0, 0, -1);
         const zRotation = new THREE.Quaternion().setFromAxisAngle(zAxis, Math.PI / 2);
         group.quaternion.copy(q.multiply(zRotation).normalize());
-        group.renderOrder = 1
         group.userData.connector = conn;
 
         return group;
@@ -125,7 +193,8 @@ export function renderConnectors(
 
     // connector45_2
     for (const c of parsed.connector45s) {
-        group.add(makeSphere(c));
+        // Use the 45-degree connector builder for connector45 types
+        group.add(make45Connector(c));
     }
 
     return group;
