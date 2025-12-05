@@ -152,6 +152,9 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
     const slideEndsGroupRef = useRef<THREE.Group | null>(null);
     const arrowGroupRef = useRef<THREE.Group | null>(null);
     const mainSceneGroupRef = useRef<THREE.Group | null>(null);
+    const hitTestSourceRef = useRef<XRHitTestSource | null>(null);
+    const reticleRef = useRef<THREE.Mesh | null>(null);
+    const modelPlacedRef = useRef<boolean>(false);
 
     const clearArrowIndicators = (scene: THREE.Scene) => {
         if (arrowGroupRef.current) {
@@ -237,15 +240,52 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         const grid = new THREE.GridHelper(2, 40, 0x444444, 0x222222);
         mainSceneGroup.add(grid);
 
-        // Handle XR session start/end for scaling
-        renderer.xr.addEventListener('sessionstart', () => {
+        // Create a reticle (placement indicator) for AR hit-testing
+        const reticleGeometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
+        const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        const reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+        reticle.matrixAutoUpdate = false;
+        reticle.visible = false;
+        scene.add(reticle);
+        reticleRef.current = reticle;
+
+        // Handle XR session start/end for scaling and hit-test
+        renderer.xr.addEventListener('sessionstart', async () => {
             // Scale down the entire scene by 1000 when entering AR
             mainSceneGroup.scale.setScalar(1 / 1000);
+            
+            // Reset model placement state
+            modelPlacedRef.current = false;
+            mainSceneGroup.visible = false; // Hide until placed
+            reticle.visible = false;
+
+            // Request hit-test source
+            const session = renderer.xr.getSession();
+            if (session && session.requestHitTestSource) {
+                try {
+                    const viewerSpace = await session.requestReferenceSpace('viewer');
+                    const hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+                    if (hitTestSource) {
+                        hitTestSourceRef.current = hitTestSource;
+                    }
+                } catch (err) {
+                    console.error('Hit test not supported:', err);
+                }
+            }
         });
 
         renderer.xr.addEventListener('sessionend', () => {
             // Restore original scale when exiting AR
             mainSceneGroup.scale.setScalar(1);
+            mainSceneGroup.visible = true;
+            reticle.visible = false;
+            
+            // Clean up hit-test source
+            if (hitTestSourceRef.current) {
+                hitTestSourceRef.current.cancel();
+                hitTestSourceRef.current = null;
+            }
+            modelPlacedRef.current = false;
         });
 
         const onResize = () => {
@@ -259,15 +299,56 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
 
         window.addEventListener("resize", onResize);
 
+        // Handle AR placement on select (tap/click in AR)
+        const onSelect = () => {
+            if (reticleRef.current && reticleRef.current.visible && !modelPlacedRef.current) {
+                // Place the model at the reticle position
+                mainSceneGroup.position.setFromMatrixPosition(reticleRef.current.matrix);
+                mainSceneGroup.visible = true;
+                modelPlacedRef.current = true;
+                reticleRef.current.visible = false;
+            }
+        };
+
         // Use setAnimationLoop instead of requestAnimationFrame for XR compatibility
-        renderer.setAnimationLoop(() => {
+        renderer.setAnimationLoop((timestamp, frame) => {
             controls.update();
+
+            // Handle hit-testing in AR
+            if (frame && hitTestSourceRef.current && !modelPlacedRef.current) {
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                if (referenceSpace) {
+                    const hitTestResults = frame.getHitTestResults(hitTestSourceRef.current);
+                    
+                    if (hitTestResults.length > 0) {
+                        const hit = hitTestResults[0];
+                        const pose = hit.getPose(referenceSpace);
+                        
+                        if (pose && reticleRef.current) {
+                            reticleRef.current.visible = true;
+                            reticleRef.current.matrix.fromArray(pose.transform.matrix);
+                        }
+                    } else if (reticleRef.current) {
+                        reticleRef.current.visible = false;
+                    }
+                }
+            }
+
             renderer.render(scene, camera);
         });
+
+        // Add select listener for AR placement
+        const controller = renderer.xr.getController(0);
+        controller.addEventListener('select', onSelect);
+        scene.add(controller);
 
         return () => {
             renderer.setAnimationLoop(null); // Stop animation loop
             window.removeEventListener("resize", onResize);
+            
+            // Remove select listener
+            const controller = renderer.xr.getController(0);
+            controller.removeEventListener('select', onSelect);
 
             // Restore any glow before disposing renderer/scene so original materials aren't lost
             try {
