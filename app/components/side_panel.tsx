@@ -17,6 +17,7 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
     const [activeTab, setActiveTab] = useState<ActiveTab>("file-view");
     const [rawText, setRawText] = useState<string>("(no file loaded yet)");
     const [parsedFile, setParsedFile] = useState<QdfParsedFile | null>(null);
+    const [searchText, setSearchText] = useState<string>("");
 
     const dropZoneRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -119,6 +120,34 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
         e,
     ) => {
         handleFiles(e.target.files);
+    };
+
+    const handleSearchSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (!searchText.trim()) return;
+
+        const urls = [
+            `https://mdb.quadroworld.com/files/qdf/${searchText}.qdf`,
+            `https://mynthquadro.github.io/quadro/diy_qdf/${searchText}.qdf`,
+            `https://yougenmdb.com/sites/default/files/mdb/${searchText}/${searchText}-public.qdf`,
+        ];
+
+        for (const url of urls) {
+            try {
+                const response = await fetch(url);
+                if (response.ok) {
+                    const text = await response.text();
+                    setFileContents(text);
+                    return;
+                }
+            } catch (err) {
+                // Try next URL
+                console.debug(`Failed to fetch ${url}:`, err);
+            }
+        }
+
+        // If we get here, none of the URLs worked
+        setFileContents(`Error: Could not find QDF file for "${searchText}" in any of the template sites.`);
     };
 
     const renderParsedView = () => {
@@ -245,6 +274,46 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
                 style={{ display: "none" }}
                 onChange={handleFileInputChange}
             />
+
+            <form onSubmit={handleSearchSubmit} style={{ padding: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label htmlFor="qdf-search" style={{ fontSize: "12px", fontWeight: "600" }}>
+                    Search template sites:
+                </label>
+                <input
+                    id="qdf-search"
+                    type="text"
+                    placeholder="Enter QDF name (e.g., 'example')"
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    style={{
+                        padding: "6px 8px",
+                        borderRadius: "6px",
+                        border: "1px solid rgba(255, 255, 255, 0.2)",
+                        background: "rgba(255, 255, 255, 0.05)",
+                        color: "#eee",
+                        fontSize: "12px",
+                        outline: "none",
+                    }}
+                />
+                <button
+                    type="submit"
+                    style={{
+                        padding: "6px 8px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: "rgba(92, 200, 255, 0.6)",
+                        color: "#fff",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        transition: "background 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(92, 200, 255, 0.9)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(92, 200, 255, 0.6)")}
+                >
+                    Search
+                </button>
+            </form>
 
             <div id="tab-contents"
                 className={`tab-content ${activeTab === "file-view" ? "tab-content-active" : ""
