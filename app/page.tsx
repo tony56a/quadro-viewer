@@ -1,65 +1,144 @@
-import Image from "next/image";
+'use client';
+
+import { useState } from "react";
+import ThreeCanvas from "@/app/components/canvas";
+import QdfSidePanel from "@/app/components/side_panel";
+import LeftPanel from "@/app/components/left_panel";
+
+import type { QdfParsedFile, QdfConnector3, QdfConnector45, QdfTube } from "@/app/types/qdf_containers";
+
+type Pickable =
+  | { kind: "connector"; value: QdfConnector3 | QdfConnector45 }
+  | { kind: "tube"; value: QdfTube }
+  | null;
 
 export default function Home() {
+
+  const [parsed, setParsed] = useState<QdfParsedFile | null>(null);
+  const [selectedConnector, setSelectedConnector] =
+    useState<Pickable>(null);
+  const [panelVisible, setPanelVisible] = useState<boolean>(true);
+  const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(true);
+
+  // Helper to map geometry -> material hex (if available)
+  const getMaterialHexFor = (geom: any): string | null => {
+    if (!parsed) return null;
+
+    // Fallback: try to match geometry id to a material id
+    const tryByGeomId = parsed.materials.find((mm) => mm.id === geom?.id) ?? parsed.materials[geom?.id];
+    if (tryByGeomId) return `#${tryByGeomId.colorHex.toString(16).padStart(6, "0")}`;
+
+    return null;
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <>
+      <ThreeCanvas
+        parsedFile={parsed}
+        onSelectConnector={(conn) => {
+          // normalize the callback from ThreeCanvas into our Pickable shape
+          if (!conn) {
+            setSelectedConnector(null);
+            return;
+          }
+
+          // connector objects in ThreeCanvas include kind strings matching container types
+          const kindStr = (conn as any).kind ?? "";
+          if (kindStr.startsWith("connector")) {
+            setSelectedConnector({ kind: "connector", value: conn as any });
+          } else if (kindStr.startsWith("tube")) {
+            setSelectedConnector({ kind: "tube", value: conn as any });
+          } else {
+            // fallback
+            setSelectedConnector(null);
+          }
+        }}
+      />
+
+      <LeftPanel
+        className={leftPanelVisible ? "" : "hidden"}
+        onHidePanel={() => setLeftPanelVisible(false)}
+      />
+      <QdfSidePanel
+        className={panelVisible ? "" : "hidden"}
+        onParsed={setParsed}
+        onHidePanel={() => setPanelVisible(false)}
+      />
+
+      {!panelVisible && (
+        <button
+          type="button"
+          className="panel-toggle-button"
+          onClick={() => setPanelVisible(true)}
+        >
+          QDF ▸
+        </button>
+      )}
+
+      {!leftPanelVisible && (
+        <button
+          type="button"
+          className="panel-toggle-button-left"
+          onClick={() => setLeftPanelVisible(true)}
+        >
+          ◂ Tools
+        </button>
+      )}
+
+      {selectedConnector && (
+        <div className="coord-bubble">
+          <div>
+            <strong>{selectedConnector.kind}</strong>
+          </div>
+
+          {/* resolved geometry value */}
+          {(() => {
+            const geom: any = (selectedConnector as any).value;
+            const swatch = getMaterialHexFor(geom);
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {swatch ? (
+                  <>
+                    <span style={{ width: 18, height: 12, display: "inline-block", background: swatch, border: "1px solid rgba(0,0,0,0.6)", borderRadius: 2 }} />
+                    <span style={{ fontSize: 12 }}>{swatch}</span>
+                  </>
+                ) : (
+                  <span style={{ fontSize: 12, color: "#ccc" }}>No material</span>
+                )}
+              </div>
+            );
+          })()}
+          {selectedConnector.kind === "connector" && (
+            <>
+              <div>
+                Nearby tubes: {(((selectedConnector as any).value as any).nearbyTubeCount ?? 0)}
+              </div>
+            </>
+          )}
+          <div>
+            x: {((selectedConnector as any).value.orientation.x ?? 0).toFixed(1)} mm
+          </div>
+          <div>
+            y: {((selectedConnector as any).value.orientation.y ?? 0).toFixed(1)} mm
+          </div>
+          <div>
+            z: {((selectedConnector as any).value.orientation.z ?? 0).toFixed(1)} mm
+          </div>
+          <div>
+            rotation x: {(((selectedConnector as any).value.quaternion.x ?? 0) as number).toFixed(5)}
+          </div>
+          <div>
+            rotation y: {(((selectedConnector as any).value.quaternion.y ?? 0) as number).toFixed(5)}
+          </div>
+          <div>
+            rotation z: {(((selectedConnector as any).value.quaternion.z ?? 0) as number).toFixed(5)}
+          </div>
+          <div>
+            rotation w: {(((selectedConnector as any).value.quaternion.w ?? 0) as number).toFixed(5)}
+          </div>
+
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      )}
+    </>
   );
 }

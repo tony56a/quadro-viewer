@@ -1,0 +1,534 @@
+// lib/qdfParser.ts
+import {
+    QdfParsedFile,
+    QdfOrientation,
+    QdfConnector3,
+    QdfConnector45,
+    QdfTube,
+    QdfPanel,
+    QdfDisplayPanel,
+    QdfTextile,
+    QdfClamp,
+    QdfSlide,
+    QdfMaterial,
+    QdfGeometry,
+} from "@/app/types/qdf_containers";
+import {
+    decodeQdfQuaternion,
+    addHalfTubeOffset
+} from "@/app/lib/qdf_transform_utils";
+import * as THREE from "three";
+
+
+function parseOrientationBlock(block: string): QdfOrientation | null {
+    // block is like "{a, b, c, d, x, y, z}"
+    const stripped = block.replace(/[{}]/g, "");
+    const parts = stripped
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+
+    if (parts.length < 7) return null;
+
+    const nums = parts.slice(0, 7).map((v) => parseFloat(v));
+    if (nums.some((n) => Number.isNaN(n))) return null;
+
+    const [a, b, c, d, x, y, z] = nums;
+    return { a, b, c, d, x, y, z };
+}
+
+function extractInnerBraceBlock(content: string): {
+    before: string;
+    block: string | null;
+    after: string;
+} {
+    const start = content.indexOf("{");
+    if (start === -1) return { before: content, block: null, after: "" };
+
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < content.length; i++) {
+        const ch = content[i];
+        if (ch === "{") depth++;
+        if (ch === "}") {
+            depth--;
+            if (depth === 0) {
+                end = i;
+                break;
+            }
+        }
+    }
+
+    if (end === -1) {
+        return { before: content, block: null, after: "" };
+    }
+
+    const before = content.slice(0, start);
+    const block = content.slice(start, end + 1);
+    const after = content.slice(end + 1);
+    return { before, block, after };
+}
+
+function splitCommaParams(s: string): string[] {
+    return s
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+}
+
+// Split top-level CSV-like fields, respecting quoted strings.
+function splitCsvRespectQuotes(s: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (ch === '"') {
+            inQuotes = !inQuotes;
+            current += ch;
+        } else if (ch === "," && !inQuotes) {
+            result.push(current.trim());
+            current = "";
+        } else {
+            current += ch;
+        }
+    }
+
+    if (current.trim().length > 0) {
+        result.push(current.trim());
+    }
+
+    return result;
+}
+
+function parseMaterialLine(line: string): QdfMaterial | null {
+    const start = line.indexOf("{");
+    const end = line.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+
+    const content = line.slice(start + 1, end).trim();
+    const fields = splitCsvRespectQuotes(content);
+
+    if (fields.length < 16) {
+        return null;
+    }
+
+    const parseIntField = (idx: number): number =>
+        parseInt(fields[idx], 10);
+    const parseFloatField = (idx: number): number =>
+        parseFloat(fields[idx]);
+
+    const id = parseIntField(0);
+
+    const rawName = fields[1];
+    const name =
+        rawName.startsWith('"') && rawName.endsWith('"')
+            ? rawName.slice(1, -1)
+            : rawName;
+
+    const materialType = parseIntField(2);
+
+    const r1 = parseFloatField(3);
+    const g1 = parseFloatField(4);
+    const b1 = parseFloatField(5);
+
+    const flags = parseIntField(fields.length - 1);
+
+    // For now we treat linearColor≈sRGB; you can add gamma if needed.
+    const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+    const lr = clamp01(r1);
+    const lg = clamp01(g1);
+    const lb = clamp01(b1);
+
+    const sr = lr;
+    const sg = lg;
+    const sb = lb;
+
+    const to255 = (v: number) => Math.round(v * 255);
+    const colorHex =
+        (to255(sr) << 16) | (to255(sg) << 8) | to255(sb);
+
+    const material: QdfMaterial = {
+        kind: "material3",
+        id,
+        name,
+        materialType,
+        linearColor: { r: lr, g: lg, b: lb },
+        srgbColor: { r: sr, g: sg, b: sb },
+        colorHex,
+        meshStandard: {
+            color: colorHex,
+            metalness: 0.0,
+            roughness: 0.4,
+            opacity: 1.0,
+            transparent: false,
+        },
+        flags,
+    };
+
+    return material;
+}
+
+// --- Per-geometry parsers ---
+
+function parseConnector3Line(line: string): QdfConnector3 | null {
+    const start = line.indexOf("{");
+    const end = line.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    const content = line.slice(start + 1, end).trim();
+
+    const { before, block, after } = extractInnerBraceBlock(content);
+    if (!block) return null;
+
+    const orientation = parseOrientationBlock(block);
+    if (!orientation) return null;
+
+    const idStr = before.split(",")[0].trim();
+    const id = parseInt(idStr, 10);
+    if (Number.isNaN(id)) return null;
+
+    const params = splitCommaParams(after);
+    if (params.length < 6) return null;
+
+    const connectorType = parseInt(params[0], 10);
+    const rotationIndex = parseInt(params[1], 10);
+    const gridI = parseInt(params[2], 10);
+    const gridJ = parseInt(params[3], 10);
+    const flags = parseInt(params[4], 10);
+    const reserved = parseInt(params[5], 10);
+
+    const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
+    const quaternion = decodeQdfQuaternion(
+        orientation);
+
+    return {
+        kind: "connector3",
+        id,
+        orientation,
+        position: positionVector,
+        quaternion: quaternion,
+        connectorType,
+        variant1: rotationIndex,
+        variant2: gridI,
+        variant3: gridJ,
+        variant4: flags,
+        reserved,
+    };
+}
+
+function parseConnector45Line(line: string): QdfConnector45 | null {
+    const start = line.indexOf("{");
+    const end = line.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    const content = line.slice(start + 1, end).trim();
+
+    const { before, block, after } = extractInnerBraceBlock(content);
+    if (!block) return null;
+
+    const orientation = parseOrientationBlock(block);
+    if (!orientation) return null;
+
+    const idStr = before.split(",")[0].trim();
+    const id = parseInt(idStr, 10);
+    if (Number.isNaN(id)) return null;
+
+    const params = splitCommaParams(after);
+    if (params.length < 3) return null;
+
+    const connectorType = parseInt(params[0], 10);
+    const flag1 = parseInt(params[1], 10);
+    const flag2 = parseInt(params[2], 10);
+
+    const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
+    const quaternion = decodeQdfQuaternion(
+        orientation);
+
+    return {
+        kind: "connector45_2",
+        id,
+        orientation,
+        position: positionVector,
+        quaternion: quaternion,
+        connectorType,
+        flag1,
+        flag2,
+    };
+}
+
+function parseTubeLine(line: string): QdfTube | null {
+    const start = line.indexOf("{");
+    const end = line.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    const content = line.slice(start + 1, end).trim();
+
+    const { before, block, after } = extractInnerBraceBlock(content);
+    if (!block) return null;
+
+    const orientation = parseOrientationBlock(block);
+    if (!orientation) return null;
+
+    const idStr = before.split(",")[0].trim();
+    const id = parseInt(idStr, 10);
+    if (Number.isNaN(id)) return null;
+
+    const params = splitCommaParams(after);
+    if (params.length < 4) return null;
+
+    const materialId = parseInt(params[0], 10);
+    const dim1 = parseFloat(params[1]);
+    const dim2 = parseFloat(params[2]);
+    const dim3 = parseFloat(params[3]);
+
+    const quaternion = decodeQdfQuaternion(
+        orientation);
+    const offset = addHalfTubeOffset(dim1, 1, quaternion);
+
+    const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
+    positionVector.add(offset);
+
+    return {
+        kind: "tube2",
+        id,
+        orientation,
+        position: positionVector,
+        quaternion: quaternion,
+        materialId,
+        dim1,
+        dim2,
+        dim3,
+    };
+}
+
+function parsePanelLike(
+    line: string,
+    kind: "panel2" | "display2" | "textil2",
+): QdfPanel | QdfDisplayPanel | QdfTextile | null {
+    const start = line.indexOf("{");
+    const end = line.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    const content = line.slice(start + 1, end).trim();
+
+    const { before, block, after } = extractInnerBraceBlock(content);
+    if (!block) return null;
+
+    const orientation = parseOrientationBlock(block);
+    if (!orientation) return null;
+
+    const idStr = before.split(",")[0].trim();
+    const id = parseInt(idStr, 10);
+    if (Number.isNaN(id)) return null;
+
+    const params = splitCommaParams(after);
+    if (params.length < 6) return null;
+
+    const materialId = parseInt(params[0], 10);
+    const dim1 = parseFloat(params[1]);
+    const dim2 = parseFloat(params[2]);
+    const dim3 = parseFloat(params[3]);
+    const offset1 = parseFloat(params[4]);
+    const offset2 = parseFloat(params[5]);
+
+    const q = decodeQdfQuaternion(
+        orientation
+    );
+    const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
+
+    const base = {
+        id,
+        orientation,
+        position: positionVector,
+        quaternion: q,
+        materialId,
+        dim1,
+        dim2,
+        dim3,
+        offset1,
+        offset2,
+    };
+
+    if (kind === "panel2") {
+        return { kind, ...base } as QdfPanel;
+    } else if (kind === "display2") {
+        return { kind, ...base } as QdfDisplayPanel;
+    } else {
+        return { kind, ...base } as QdfTextile;
+    }
+}
+
+function parseClampLike(
+    line: string,
+    kind: "clamp2" | "slide2",
+): QdfClamp | QdfSlide | null {
+    const start = line.indexOf("{");
+    const end = line.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    const content = line.slice(start + 1, end).trim();
+
+    const { before, block, after } = extractInnerBraceBlock(content);
+    if (!block) return null;
+
+    const orientation = parseOrientationBlock(block);
+    if (!orientation) return null;
+
+    const idStr = before.split(",")[0].trim();
+    const id = parseInt(idStr, 10);
+    if (Number.isNaN(id)) return null;
+
+    const params = splitCommaParams(after);
+    if (params.length < 2) return null;
+
+    const materialId = parseInt(params[0], 10);
+    const flag = parseInt(params[1], 10);
+
+    const q = decodeQdfQuaternion(
+        orientation
+    );
+    const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
+
+
+    const base = {
+        id,
+        orientation,
+        position: positionVector,
+        quaternion: q,
+
+        materialId,
+        flag,
+    };
+
+    if (kind === "clamp2") {
+        return { kind, ...base } as QdfClamp;
+    } else {
+        return { kind, ...base } as QdfSlide;
+    }
+}
+
+// --- Main entrypoint ---
+
+export function parseQdf(text: string): QdfParsedFile {
+    const lines = text.split(/\r?\n/);
+
+    const materials: QdfMaterial[] = [];
+    const geometries: QdfGeometry[] = [];
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (line.startsWith("0,") && line.endsWith(";")) continue; // header
+        if (line.startsWith("//") || line.startsWith("#")) continue;
+
+        if (line.startsWith("material3")) {
+            const mat = parseMaterialLine(line);
+            if (mat) materials.push(mat);
+            continue;
+        }
+
+        if (line.startsWith("connector3")) {
+            const c = parseConnector3Line(line);
+            if (c) geometries.push(c);
+            continue;
+        }
+
+        if (line.startsWith("connector45_2")) {
+            const c45 = parseConnector45Line(line);
+            if (c45) geometries.push(c45);
+            continue;
+        }
+
+        if (line.startsWith("tube2")) {
+            const t = parseTubeLine(line);
+            if (t) geometries.push(t);
+            continue;
+        }
+
+        if (line.startsWith("panel2")) {
+            const p = parsePanelLike(line, "panel2");
+            if (p) geometries.push(p);
+            continue;
+        }
+
+        if (line.startsWith("display2")) {
+            const p = parsePanelLike(line, "display2");
+            if (p) geometries.push(p);
+            continue;
+        }
+
+        if (line.startsWith("textil2")) {
+            const p = parsePanelLike(line, "textil2");
+            if (p) geometries.push(p);
+            continue;
+        }
+
+        if (line.startsWith("clamp2")) {
+            const c = parseClampLike(line, "clamp2");
+            if (c) geometries.push(c);
+            continue;
+        }
+
+        if (line.startsWith("slide2")) {
+            const s = parseClampLike(line, "slide2");
+            if (s) geometries.push(s);
+            continue;
+        }
+
+        // ignore camera2 and anything else for now
+    }
+
+    // Split geometry arrays by kind for convenience
+    const connectors: QdfConnector3[] = [];
+    const connector45s: QdfConnector45[] = [];
+    const tubes: QdfTube[] = [];
+    const panels: QdfPanel[] = [];
+    const displayPanels: QdfDisplayPanel[] = [];
+    const textiles: QdfTextile[] = [];
+    const clamps: QdfClamp[] = [];
+    const slides: QdfSlide[] = [];
+
+    for (const g of geometries) {
+        switch (g.kind) {
+            case "connector3":
+                connectors.push(g);
+                break;
+            case "connector45_2":
+                connector45s.push(g);
+                break;
+            case "tube2":
+                tubes.push(g);
+                break;
+            case "panel2":
+                panels.push(g);
+                break;
+            case "display2":
+                displayPanels.push(g);
+                break;
+            case "textil2":
+                textiles.push(g);
+                break;
+            case "clamp2":
+                clamps.push(g);
+                break;
+            case "slide2":
+                slides.push(g);
+                break;
+            default:
+                break;
+        }
+    }
+
+    const parsed: QdfParsedFile = {
+        rawText: text,
+        materials,
+        geometries,
+        connectors,
+        connector45s,
+        tubes,
+        panels,
+        displayPanels,
+        textiles,
+        clamps,
+        slides,
+    };
+
+    return parsed;
+}
