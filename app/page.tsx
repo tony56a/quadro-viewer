@@ -111,7 +111,15 @@ export default function Home() {
           {selectedConnector.kind === "connector" && (
             <>
               <div>
-                Nearby tubes: {(((selectedConnector as any).value as any).nearbyTubeCount ?? 0)}
+                Type: {(((selectedConnector as any).value as any).connectorKind ?? "unknown")}
+              </div>
+            </>
+          )}
+
+          {selectedConnector.kind === "tube" && (
+            <>
+              <div>
+                Tube length: {(((selectedConnector as any).value as QdfTube).length ?? 0)} mm
               </div>
             </>
           )}

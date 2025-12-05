@@ -21,14 +21,28 @@ export interface QdfGeomBase {
     quaternion: { x: number; y: number; z: number; w: number };
 }
 
+export enum QdfConnectorKind {
+    STRAIGHT = "STRAIGHT_CONNECTOR",
+    L_CONNECTOR = "L_CONNECTOR",
+    T_CONNECTOR = "T_CONNECTOR",
+    CORNER_CONNECTOR = "CORNER_CONNECTOR",
+    FOUR_WAY_CONNECTOR = "FOUR_WAY_CONNECTOR",
+    CROSS_CONNECTOR = "CROSS_CONNECTOR",
+    FIVE_WAY_CONNECTOR = "FIVE_WAY_CONNECTOR",
+    HUB_CONNECTOR = "HUB_CONNECTOR",
+    INVALID = "INVALID",
+}
+
 export interface QdfConnector3 extends QdfGeomBase {
     kind: "connector3";
-    connectorType: number;
+    colorId: number;
     variant1: number;
     variant2: number;
     variant3: number;
     variant4: number;
     reserved: number;
+
+    connectorKind: QdfConnectorKind;
 }
 
 export interface QdfConnector45 extends QdfGeomBase {
@@ -41,7 +55,7 @@ export interface QdfConnector45 extends QdfGeomBase {
 export interface QdfTube extends QdfGeomBase {
     kind: "tube2";
     materialId: number;
-    dim1: number;
+    length: number;
     dim2: number;
     dim3: number;
 }

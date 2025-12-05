@@ -16,17 +16,47 @@ interface ThreeCanvasProps {
 }
 
 function setGlow(
-    mesh: THREE.Mesh | null,
-    currentGlowingRef: { current: THREE.Mesh | null },
+    mesh: THREE.Mesh | THREE.Group | null,
+    currentGlowingRef: { current: THREE.Mesh | THREE.Group | null },
     originalMaterials: WeakMap<THREE.Mesh, THREE.Material>
 ): void {
+    // Helper to recursively apply or restore glow on a mesh
+    const applyGlowToMesh = (m: THREE.Mesh, shouldGlow: boolean) => {
+        if (!m.material) return;
+
+        if (shouldGlow) {
+            // Turn ON glow
+            originalMaterials.set(m, m.material as THREE.Material);
+            if (Array.isArray(m.material)) {
+                // skip multi-material
+            } else {
+                const glowMat = m.material.clone();
+                (glowMat as any).emissive = new THREE.Color(0xFFffff);
+                (glowMat as any).emissiveIntensity = 0.8;
+                m.material = glowMat;
+            }
+        } else {
+            // Turn OFF glow
+            const original = originalMaterials.get(m);
+            if (original) {
+                m.material = original;
+                originalMaterials.delete(m);
+            }
+        }
+    };
+
     // 1) Turn OFF glow on previous one
     const currentGlowing = currentGlowingRef.current;
     if (currentGlowing && currentGlowing !== mesh) {
-        const original = originalMaterials.get(currentGlowing);
-        if (original) {
-            currentGlowing.material = original;
-            originalMaterials.delete(currentGlowing);
+        // Restore material on the previously glowing mesh or group
+        if (currentGlowing instanceof THREE.Group) {
+            currentGlowing.traverse((child) => {
+                if ((child as THREE.Mesh).isMesh) {
+                    applyGlowToMesh(child as THREE.Mesh, false);
+                }
+            });
+        } else {
+            applyGlowToMesh(currentGlowing, false);
         }
         currentGlowingRef.current = null;
     }
@@ -37,19 +67,18 @@ function setGlow(
         return;
     }
 
-    // 3) Turn ON glow on the new one
-    originalMaterials.set(mesh, mesh.material as THREE.Material);
-
-    if (Array.isArray(mesh.material)) {
-        // do nothing, no multi-material geometries exist
+    // 3) Turn ON glow on the new one (traverse if it's a group, apply if it's a mesh)
+    if (mesh instanceof THREE.Group) {
+        mesh.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+                applyGlowToMesh(child as THREE.Mesh, true);
+            }
+        });
+        currentGlowingRef.current = mesh;
     } else {
-        const glowMat = mesh.material.clone();
-        (glowMat as any).emissive = new THREE.Color(0xFFffff);
-        (glowMat as any).emissiveIntensity = 0.8;
-        mesh.material = glowMat;
+        applyGlowToMesh(mesh, true);
+        currentGlowingRef.current = mesh;
     }
-
-    currentGlowingRef.current = mesh;
 
 }
 
@@ -111,7 +140,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
     const connectorsGroupRef = useRef<THREE.Group | null>(null);
 
     const originalMaterialsRef = useRef<WeakMap<THREE.Mesh, THREE.Material>>(new WeakMap());
-    const currentGlowingRef = useRef<THREE.Mesh | null>(null);
+    const currentGlowingRef = useRef<THREE.Mesh | THREE.Group | null>(null);
 
     const tubesGroupRef = useRef<THREE.Group | null>(null);
     const tubeBoxes: THREE.Box3[] = [];
@@ -260,7 +289,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
 
         const materialMap = buildThreeMaterials(parsedFile.materials);
         const connectorsGroup = renderConnectors(parsedFile, materialMap, {
-            sphereRadius: 50, // mm
+            sphereRadius: 20, // mm
         });
 
         scene.add(connectorsGroup);
@@ -315,59 +344,32 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
                 targets.push(...tubesGroupRef.current.children);
             }
 
-            const intersects = raycaster.intersectObjects(targets, false);
+            const intersects = raycaster.intersectObjects(targets, true);
 
             if (intersects.length > 0) {
                 const first = intersects[0].object as THREE.Mesh;
-                const conn = first.userData.connector as
+                let targetMesh: THREE.Mesh;
+
+                if (first.parent !== null && first.parent.userData.connector !== undefined) {
+                    targetMesh = first.parent as THREE.Mesh;
+                } else {
+                    targetMesh = first as THREE.Mesh;
+                }
+                const conn = targetMesh.userData.connector as
                     | QdfConnector3
                     | QdfConnector45
                     | undefined;
-                const tube = first.userData.tube as QdfTube | undefined;
+                const tube = targetMesh.userData.tube as QdfTube | undefined;
 
                 // Remove existing arrows
                 //clearArrowIndicators(scene);
 
-                setGlow(first, currentGlowingRef, originalMaterialsRef.current);
+                setGlow(targetMesh, currentGlowingRef, originalMaterialsRef.current);
 
                 if (conn && onSelectConnector) {
 
                     const connectorPos = new THREE.Vector3();
-                    first.getWorldPosition(connectorPos);
-
-                    // Count tubes that intersect with a sphere based on the connector mesh
-                    let intersectCount = 0;
-                    try {
-                        const tubesGroup = tubesGroupRef.current;
-
-                        // Derive an effective sphere radius from the connector mesh's geometry
-                        let localRadius = 0;
-                        const geom = (first.geometry as THREE.BufferGeometry | undefined) ?? undefined;
-                        if (geom) {
-                            if (!geom.boundingSphere) geom.computeBoundingSphere();
-                            localRadius = geom.boundingSphere?.radius ?? 0;
-                        }
-                        const effectiveRadius = localRadius + 30; // reuse connector size + margin
-                        const sphere = new THREE.Sphere(connectorPos.clone(), effectiveRadius);
-
-                        if (tubesGroup) {
-                            for (const tubeMesh of tubesGroup.children) {
-                                const box = new THREE.Box3().setFromObject(tubeMesh as THREE.Object3D);
-                                if (box.intersectsSphere(sphere)) {
-                                    intersectCount++;
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        console.error("Error computing nearby tube intersections:", err);
-                    }
-
-                    // Merge the nearbyTubeCount into the connector object we pass back so UI can show it
-                    const connWithCount = Object.assign({}, conn, { nearbyTubeCount: intersectCount });
-                    onSelectConnector(connWithCount as any);
-
-                    // attach to the picked mesh userData too for convenience
-                    (first.userData as any).nearbyTubeCount = intersectCount;
+                    targetMesh.getWorldPosition(connectorPos);
 
                     /*
                     // Create new arrow group
@@ -377,6 +379,8 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
                     scene.add(connectorArrows);
                     arrowGroupRef.current = connectorArrows;
                     */
+
+                    onSelectConnector(conn as any);
 
                 } else if (tube && onSelectConnector) {
                     // reuse same callback & bubble, but feed tube data

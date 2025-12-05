@@ -12,6 +12,7 @@ import {
     QdfSlide,
     QdfMaterial,
     QdfGeometry,
+    QdfConnectorKind,
 } from "@/app/types/qdf_containers";
 import {
     decodeQdfQuaternion,
@@ -170,7 +171,112 @@ function parseMaterialLine(line: string): QdfMaterial | null {
     return material;
 }
 
+// helpers for connector kind determination
+
+function countConnectorBits(n: number): number {
+    let count = 0;
+    while (n) {
+        count += n & 1;
+        n >>= 1;
+    }
+    return count;
+}
+
+function isStraight(bitmask: number): boolean {
+    // Check if exactly one axis has both directions set
+    const xAxis = (bitmask & 0x03) === 0x03; // bits 0,1
+    const yAxis = (bitmask & 0x0C) === 0x0C; // bits 2,3
+    const zAxis = (bitmask & 0x30) === 0x30; // bits 4,5
+
+    return (xAxis && !yAxis && !zAxis) ||
+        (!xAxis && yAxis && !zAxis) ||
+        (!xAxis && !yAxis && zAxis);
+}
+
+function isCornerConnector(bitmask: number): boolean {
+    // Corner connector: exactly one direction per axis
+    const xBits = bitmask & 0x03; // +X and -X
+    const yBits = bitmask & 0x0C; // +Y and -Y
+    const zBits = bitmask & 0x30; // +Z and -Z
+
+    // Each axis should have exactly one bit set (not both, not neither)
+    const xCount = countConnectorBits(xBits);
+    const yCount = countConnectorBits(yBits);
+    const zCount = countConnectorBits(zBits);
+
+    const totalConnections = xCount + yCount + zCount;
+
+    // For 2-way: two axes with 1 connection each, one axis with 0
+    // For 3-way: all three axes with 1 connection each
+    if (totalConnections === 2) {
+        return (xCount <= 1 && yCount <= 1 && zCount <= 1) &&
+            ((xCount === 0) || (yCount === 0) || (zCount === 0));
+    }
+
+    if (totalConnections === 3) {
+        return xCount === 1 && yCount === 1 && zCount === 1;
+    }
+
+    return false;
+}
+
+function isCrossConnector(bitmask: number): boolean {
+    // Cross connector: missing connectors on 1 axis
+    const xBits = bitmask & 0x03; // +X and -X
+    const yBits = bitmask & 0x0C; // +Y and -Y
+    const zBits = bitmask & 0x30; // +Z and -Z
+
+    // Each axis should have exactly one bit set (not both, not neither)
+    const xCount = countConnectorBits(xBits);
+    const yCount = countConnectorBits(yBits);
+    const zCount = countConnectorBits(zBits);
+
+    const totalConnections = xCount + yCount + zCount;
+
+    // For 2-way: two axes with 1 connection each, one axis with 0
+    // For 3-way: all three axes with 1 connection each
+    return (xCount == 0 && yCount > 0 && zCount > 0) ||
+        (yCount == 0 && xCount > 0 && zCount > 0) ||
+        (zCount == 0 && xCount > 0 && yCount > 0);
+}
+
+function getConnectorCategory(bitmask: number): QdfConnectorKind {
+    // Count number of set bits
+    const connectionCount = countConnectorBits(bitmask);
+
+    switch (connectionCount) {
+        case 0:
+        case 1:
+            return QdfConnectorKind.INVALID;
+
+        case 2:
+            // Check if opposite directions (straight) or perpendicular (elbow/corner)
+            return isStraight(bitmask)
+                ? QdfConnectorKind.STRAIGHT
+                : QdfConnectorKind.L_CONNECTOR
+
+        case 3:
+            // Check if corner (3 perpendicular) or T-junction
+            return isCornerConnector(bitmask)
+                ? QdfConnectorKind.CORNER_CONNECTOR
+                : QdfConnectorKind.T_CONNECTOR;
+
+        case 4:
+            return isCrossConnector(bitmask) ? QdfConnectorKind.CROSS_CONNECTOR : QdfConnectorKind.FOUR_WAY_CONNECTOR;
+
+        case 5:
+            return QdfConnectorKind.FIVE_WAY_CONNECTOR;
+
+        case 6:
+            return QdfConnectorKind.HUB_CONNECTOR;
+
+        default:
+            return QdfConnectorKind.INVALID;
+    }
+}
+
 // --- Per-geometry parsers ---
+
 
 function parseConnector3Line(line: string): QdfConnector3 | null {
     const start = line.indexOf("{");
@@ -191,9 +297,9 @@ function parseConnector3Line(line: string): QdfConnector3 | null {
     const params = splitCommaParams(after);
     if (params.length < 6) return null;
 
-    const connectorType = parseInt(params[0], 10);
+    const colorId = parseInt(params[0], 10);
     const rotationIndex = parseInt(params[1], 10);
-    const gridI = parseInt(params[2], 10);
+    const connectorType = parseInt(params[2], 10);
     const gridJ = parseInt(params[3], 10);
     const flags = parseInt(params[4], 10);
     const reserved = parseInt(params[5], 10);
@@ -202,17 +308,20 @@ function parseConnector3Line(line: string): QdfConnector3 | null {
     const quaternion = decodeQdfQuaternion(
         orientation);
 
+    const connectorKind = getConnectorCategory(connectorType);
+
     return {
         kind: "connector3",
         id,
         orientation,
         position: positionVector,
         quaternion: quaternion,
-        connectorType,
+        colorId: colorId,
         variant1: rotationIndex,
-        variant2: gridI,
+        variant2: connectorType,
         variant3: gridJ,
         variant4: flags,
+        connectorKind: connectorKind,
         reserved,
     };
 }
@@ -294,7 +403,7 @@ function parseTubeLine(line: string): QdfTube | null {
         position: positionVector,
         quaternion: quaternion,
         materialId,
-        dim1,
+        length: dim1,
         dim2,
         dim3,
     };

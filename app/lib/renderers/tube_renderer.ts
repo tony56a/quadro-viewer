@@ -46,7 +46,7 @@ export function renderTubes(
     });
 
     const makeTubeMesh = (tube: QdfTube) => {
-        const lengthMm = tube.dim1 || 350; // fallback if missing
+        const lengthMm = tube.length || 350; // fallback if missing
         const geom = getTubeGeometry(lengthMm);
 
         const material =
