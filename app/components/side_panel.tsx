@@ -126,13 +126,13 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
         e.preventDefault();
         if (!searchText.trim()) return;
 
-        const urls = [
-            `https://mdb.quadroworld.com/files/qdf/${searchText}.qdf`,
-            `https://mynthquadro.github.io/quadro/diy_qdf/${searchText}.qdf`,
-            `https://yougenmdb.com/sites/default/files/mdb/${searchText}/${searchText}-public.qdf`,
+        const proxyUrls = [
+            `/proxy/qdf/files/qdf/${searchText}.qdf`,
+            `/proxy/mynthquadro/quadro/diy_qdf/${searchText}.qdf`,
+            `/proxy/yougenmdb/sites/default/files/mdb/${searchText}/${searchText}-public.qdf`,
         ];
 
-        for (const url of urls) {
+        for (const url of proxyUrls) {
             try {
                 const response = await fetch(url);
                 if (response.ok) {
