@@ -143,5 +143,5 @@ export interface QdfParsedFile {
     textiles: QdfTextile[];
     clamps: QdfClamp[];
     slides: QdfSlide[];
-    wheels: QdfWheel[];
+    //wheels: QdfWheel[];
 }

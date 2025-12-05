@@ -5,10 +5,6 @@ let connectorArrows: THREE.Object3D | null = null;
 function clearConnectorArrows(scene: THREE.Scene) {
     if (connectorArrows) {
         scene.remove(connectorArrows);
-        connectorArrows.traverse(obj => {
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) obj.material.dispose();
-        });
         connectorArrows = null;
     }
 }
