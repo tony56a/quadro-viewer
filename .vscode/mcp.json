@@ -1,0 +1,12 @@
+{
+    "servers": {
+        "ghidra": {
+            "command": "python3.10",
+            "args": [
+                "/Users/applepie/Downloads/GhidraMCP-release-1-4/bridge_mcp_ghidra.py",
+                "--ghidra-server",
+                "http://127.0.0.1:8080/"
+            ]
+        }
+    }
+}
