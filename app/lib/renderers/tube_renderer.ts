@@ -20,7 +20,7 @@ export function renderTubes(
 ): THREE.Group {
     const group = new THREE.Group();
 
-    const unitScale = opts.unitScale ?? 1; // mm → meters
+    const unitScale = opts.unitScale ?? 1 / 1000; // mm → meters
     const tubeRadiusMm = opts.tubeRadius ?? 4;   // 40 mm radius by default
 
     // Reuse one cylinder geometry if all tubes are similar

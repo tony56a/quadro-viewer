@@ -30,7 +30,7 @@ export function renderPanels(
         const height = p.dim3 * scale;  // panel height
 
         // Build basic geometry (centered plane)
-        const geom = new THREE.BoxGeometry(width, height, 0.001);
+        const geom = new THREE.BoxGeometry(width, height, 0.00001);
         const mat =
             materials.get(p.id) ||
             new THREE.MeshStandardMaterial({

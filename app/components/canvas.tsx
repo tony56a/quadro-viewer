@@ -4,6 +4,7 @@
 import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { ARButton } from 'three/addons/webxr/ARButton.js';
 import type { QdfParsedFile, QdfConnector3, QdfConnector45, QdfTube } from "@/app/types/qdf_containers";
 import { buildThreeMaterials } from "@/app/lib/renderers/material_renderer";
 import { renderConnectors } from "@/app/lib/renderers/connector_renderer";
@@ -150,6 +151,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
     const slidesGroupRef = useRef<THREE.Group | null>(null);
     const slideEndsGroupRef = useRef<THREE.Group | null>(null);
     const arrowGroupRef = useRef<THREE.Group | null>(null);
+    const mainSceneGroupRef = useRef<THREE.Group | null>(null);
 
     const clearArrowIndicators = (scene: THREE.Scene) => {
         if (arrowGroupRef.current) {
@@ -189,15 +191,29 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
 
         const container = containerRef.current;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(window.devicePixelRatio || 1);
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setClearColor(0x050505, 1);
+        renderer.xr.enabled = true;
         container.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
+        // Add AR button
+        const arButton = ARButton.createButton(renderer, {
+            requiredFeatures: ['hit-test'],
+            optionalFeatures: ['dom-overlay'],
+            domOverlay: { root: document.body }
+        });
+        container.appendChild(arButton);
+
         const scene = new THREE.Scene();
         sceneRef.current = scene;
+
+        // Create a main group to hold all scene content (for scaling in AR)
+        const mainSceneGroup = new THREE.Group();
+        scene.add(mainSceneGroup);
+        mainSceneGroupRef.current = mainSceneGroup;
 
         const camera = new THREE.PerspectiveCamera(
             60,
@@ -212,13 +228,25 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 0.9));
+        const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x222222, 0.9);
+        mainSceneGroup.add(hemisphereLight);
         const dir = new THREE.DirectionalLight(0xffffff, 0.6);
         dir.position.set(300, 500, 300);
-        scene.add(dir);
+        mainSceneGroup.add(dir);
 
         const grid = new THREE.GridHelper(2, 40, 0x444444, 0x222222);
-        scene.add(grid);
+        mainSceneGroup.add(grid);
+
+        // Handle XR session start/end for scaling
+        renderer.xr.addEventListener('sessionstart', () => {
+            // Scale down the entire scene by 1000 when entering AR
+            mainSceneGroup.scale.setScalar(1 / 1000);
+        });
+
+        renderer.xr.addEventListener('sessionend', () => {
+            // Restore original scale when exiting AR
+            mainSceneGroup.scale.setScalar(1);
+        });
 
         const onResize = () => {
             if (!rendererRef.current || !cameraRef.current) return;
@@ -231,16 +259,14 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
 
         window.addEventListener("resize", onResize);
 
-        let animId: number;
-        const animate = () => {
-            animId = requestAnimationFrame(animate);
+        // Use setAnimationLoop instead of requestAnimationFrame for XR compatibility
+        renderer.setAnimationLoop(() => {
             controls.update();
             renderer.render(scene, camera);
-        };
-        animate();
+        });
 
         return () => {
-            cancelAnimationFrame(animId);
+            renderer.setAnimationLoop(null); // Stop animation loop
             window.removeEventListener("resize", onResize);
 
             // Restore any glow before disposing renderer/scene so original materials aren't lost
@@ -260,7 +286,8 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
     // 🔥 React to new parsedFile — rebuild connector balls
     useEffect(() => {
         const scene = sceneRef.current;
-        if (!scene) return;
+        const mainSceneGroup = mainSceneGroupRef.current;
+        if (!scene || !mainSceneGroup) return;
 
         // Restore any glow on a selected mesh before we remove/dispose meshes
         try {
@@ -273,23 +300,23 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
 
         // Remove old connectors/groups
         if (connectorsGroupRef.current) {
-            scene.remove(connectorsGroupRef.current);
+            mainSceneGroup.remove(connectorsGroupRef.current);
             connectorsGroupRef.current = null;
         }
         if (tubesGroupRef.current) {
-            scene.remove(tubesGroupRef.current);
+            mainSceneGroup.remove(tubesGroupRef.current);
             tubesGroupRef.current = null;
         }
         if (panelGroupRef.current) {
-            scene.remove(panelGroupRef.current);
+            mainSceneGroup.remove(panelGroupRef.current);
             panelGroupRef.current = null;
         }
         if (slidesGroupRef.current) {
-            scene.remove(slidesGroupRef.current);
+            mainSceneGroup.remove(slidesGroupRef.current);
             slidesGroupRef.current = null;
         }
         if (slideEndsGroupRef.current) {
-            scene.remove(slideEndsGroupRef.current);
+            mainSceneGroup.remove(slideEndsGroupRef.current);
             slideEndsGroupRef.current = null;
         }
 
@@ -303,14 +330,14 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
             sphereRadius: 20, // mm
         });
 
-        scene.add(connectorsGroup);
+        mainSceneGroup.add(connectorsGroup);
         connectorsGroupRef.current = connectorsGroup;
 
         const tubesGroup = renderTubes(parsedFile, materialMap, {
             tubeRadius: 10,   // mm
             unitScale: 1,
         });
-        scene.add(tubesGroup);
+        mainSceneGroup.add(tubesGroup);
         tubesGroupRef.current = tubesGroup;
         for (const tubeMesh of tubesGroup.children) {
             tubeMesh.updateMatrixWorld(true);
@@ -321,7 +348,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         const panelsGroup = renderPanels(parsedFile, materialMap, {
             unitScale: 1
         });
-        scene.add(panelsGroup);
+        mainSceneGroup.add(panelsGroup);
         panelGroupRef.current = panelsGroup;
 
         // Render slides (simple box representations). Use same unitScale as panels/tubes.
@@ -331,7 +358,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
             defaultWidth: 350,
             defaultDepth: 20
         });
-        scene.add(slidesGroup);
+        mainSceneGroup.add(slidesGroup);
         slidesGroupRef.current = slidesGroup;
 
         // Render slide ends (simple box representations)
@@ -340,7 +367,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
             defaultWidth: 350,
             defaultDepth: 20
         });
-        scene.add(slideEndsGroup);
+        mainSceneGroup.add(slideEndsGroup);
         slideEndsGroupRef.current = slideEndsGroup;
 
     }, [parsedFile]);

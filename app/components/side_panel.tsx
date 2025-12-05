@@ -14,7 +14,7 @@ interface QdfSidePanelProps {
 }
 
 const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, className }) => {
-    const [activeTab, setActiveTab] = useState<ActiveTab>("file-view");
+    const [activeTab, setActiveTab] = useState<ActiveTab>("parsed-view");
     const [rawText, setRawText] = useState<string>("(no file loaded yet)");
     const [parsedFile, setParsedFile] = useState<QdfParsedFile | null>(null);
     const [searchText, setSearchText] = useState<string>("");
