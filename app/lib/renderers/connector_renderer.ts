@@ -108,10 +108,11 @@ export function renderConnectors(
         // rod2 local X in world = (cos45, 0, sin45)
         const dx = Math.cos(fortyFive) * (rodLength / 2);
         const dz = Math.sin(fortyFive) * (rodLength / 2);
-        rod2.position.set(attachX + dx - (rodLength / 2), 0, dz);
-        rod2.translateX(radius * 1.25);
-        rod2.translateY(radius);
-        rod2.translateZ(-radius);
+        // Combine the previous position and subsequent translations into a single position
+        const finalX = attachX + dx - (rodLength / 2) + radius * 1.25;
+        const finalY = radius;
+        const finalZ = dz - radius;
+        rod2.position.set(finalX, finalY, finalZ);
 
         // The above subtracts (rodLength/2) to account for the fact that rod1 was placed
         // using a simple x offset; ensure the second rod visually starts where the first ends.

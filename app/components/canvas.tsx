@@ -9,6 +9,7 @@ import { buildThreeMaterials } from "@/app/lib/renderers/material_renderer";
 import { renderConnectors } from "@/app/lib/renderers/connector_renderer";
 import { renderTubes } from "@/app/lib/renderers/tube_renderer";
 import { renderPanels } from "../lib/renderers/panel_renderer";
+import { renderSlides, renderSlideEnds } from "../lib/renderers/slide_renderer";
 
 interface ThreeCanvasProps {
     parsedFile: QdfParsedFile | null;
@@ -146,6 +147,8 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
     const tubeBoxes: THREE.Box3[] = [];
 
     const panelGroupRef = useRef<THREE.Group | null>(null);
+    const slidesGroupRef = useRef<THREE.Group | null>(null);
+    const slideEndsGroupRef = useRef<THREE.Group | null>(null);
     const arrowGroupRef = useRef<THREE.Group | null>(null);
 
     const clearArrowIndicators = (scene: THREE.Scene) => {
@@ -281,6 +284,14 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
             scene.remove(panelGroupRef.current);
             panelGroupRef.current = null;
         }
+        if (slidesGroupRef.current) {
+            scene.remove(slidesGroupRef.current);
+            slidesGroupRef.current = null;
+        }
+        if (slideEndsGroupRef.current) {
+            scene.remove(slideEndsGroupRef.current);
+            slideEndsGroupRef.current = null;
+        }
 
         // Clear arrow indicators (dispose their geometries/materials)
         clearArrowIndicators(scene);
@@ -312,6 +323,25 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         });
         scene.add(panelsGroup);
         panelGroupRef.current = panelsGroup;
+
+        // Render slides (simple box representations). Use same unitScale as panels/tubes.
+        const slidesGroup = renderSlides(parsedFile, materialMap, {
+            unitScale: 1,
+            defaultLength: 1050,
+            defaultWidth: 350,
+            defaultDepth: 20
+        });
+        scene.add(slidesGroup);
+        slidesGroupRef.current = slidesGroup;
+
+        // Render slide ends (simple box representations)
+        const slideEndsGroup = renderSlideEnds(parsedFile, materialMap, {
+            unitScale: 1,
+            defaultWidth: 350,
+            defaultDepth: 20
+        });
+        scene.add(slideEndsGroup);
+        slideEndsGroupRef.current = slideEndsGroup;
 
     }, [parsedFile]);
 

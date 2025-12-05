@@ -96,6 +96,12 @@ export interface QdfSlide extends QdfGeomBase {
     flag: number;
 }
 
+export interface QdfSlideEnd extends QdfGeomBase {
+    kind: "slide-end2";
+    materialId: number;
+    flag: number;
+}
+
 export interface QdfWheel extends QdfGeomBase {
     kind: "multi-wheel2";
 
@@ -112,6 +118,7 @@ export type QdfGeometry =
     | QdfTextile
     | QdfClamp
     | QdfSlide
+    | QdfSlideEnd
     | QdfWheel;
 
 export interface QdfMaterial {
@@ -160,5 +167,6 @@ export interface QdfParsedFile {
     textiles: QdfTextile[];
     clamps: QdfClamp[];
     slides: QdfSlide[];
+    slideEnds: QdfSlideEnd[];
     //wheels: QdfWheel[];
 }

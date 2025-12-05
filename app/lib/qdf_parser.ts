@@ -10,6 +10,7 @@ import {
     QdfTextile,
     QdfClamp,
     QdfSlide,
+    QdfSlideEnd,
     QdfMaterial,
     QdfGeometry,
     QdfConnectorKind,
@@ -468,8 +469,8 @@ function parsePanelLike(
 
 function parseClampLike(
     line: string,
-    kind: "clamp2" | "slide2",
-): QdfClamp | QdfSlide | null {
+    kind: "clamp2" | "slide2" | "slide-end2",
+): QdfClamp | QdfSlide | QdfSlideEnd | null {
     const start = line.indexOf("{");
     const end = line.lastIndexOf("}");
     if (start === -1 || end === -1 || end <= start) return null;
@@ -494,8 +495,8 @@ function parseClampLike(
     const q = decodeQdfQuaternion(
         orientation
     );
-    const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
 
+    const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
 
     const base = {
         id,
@@ -509,6 +510,8 @@ function parseClampLike(
 
     if (kind === "clamp2") {
         return { kind, ...base } as QdfClamp;
+    } else if (kind === "slide-end2") {
+        return { kind, ...base } as QdfSlideEnd;
     } else {
         return { kind, ...base } as QdfSlide;
     }
@@ -578,7 +581,22 @@ export function parseQdf(text: string): QdfParsedFile {
 
         if (line.startsWith("slide2")) {
             const s = parseClampLike(line, "slide2");
+            if (s) {
+                geometries.push(s);
+            }
+            continue;
+        }
+
+        // Some QDF variants use `slide-new2` as the slide record name; treat it the same as `slide2`.
+        if (line.startsWith("slide-new2")) {
+            const s = parseClampLike(line, "slide2");
             if (s) geometries.push(s);
+            continue;
+        }
+
+        if (line.startsWith("slide-end2")) {
+            const se = parseClampLike(line, "slide-end2");
+            if (se) geometries.push(se);
             continue;
         }
 
@@ -594,6 +612,7 @@ export function parseQdf(text: string): QdfParsedFile {
     const textiles: QdfTextile[] = [];
     const clamps: QdfClamp[] = [];
     const slides: QdfSlide[] = [];
+    const slideEnds: QdfSlideEnd[] = [];
 
     for (const g of geometries) {
         switch (g.kind) {
@@ -621,6 +640,9 @@ export function parseQdf(text: string): QdfParsedFile {
             case "slide2":
                 slides.push(g);
                 break;
+            case "slide-end2":
+                slideEnds.push(g);
+                break;
             default:
                 break;
         }
@@ -638,6 +660,7 @@ export function parseQdf(text: string): QdfParsedFile {
         textiles,
         clamps,
         slides,
+        slideEnds,
     };
 
     return parsed;
