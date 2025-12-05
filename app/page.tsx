@@ -18,7 +18,7 @@ export default function Home() {
   const [selectedConnector, setSelectedConnector] =
     useState<Pickable>(null);
   const [panelVisible, setPanelVisible] = useState<boolean>(true);
-  const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(true);
+  const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(false);
 
   // Helper to map geometry -> material hex (if available)
   const getMaterialHexFor = (geom: any): string | null => {
