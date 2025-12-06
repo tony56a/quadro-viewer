@@ -11,6 +11,7 @@ import { renderConnectors } from "@/app/lib/renderers/connector_renderer";
 import { renderTubes } from "@/app/lib/renderers/tube_renderer";
 import { renderPanels } from "../lib/renderers/panel_renderer";
 import { renderSlides, renderSlideEnds } from "../lib/renderers/slide_renderer";
+import { renderWheels } from "../lib/renderers/wheel_renderer";
 
 interface ThreeCanvasProps {
     parsedFile: QdfParsedFile | null;
@@ -148,8 +149,10 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
     const tubeBoxes: THREE.Box3[] = [];
 
     const panelGroupRef = useRef<THREE.Group | null>(null);
+    const textileGroupRef = useRef<THREE.Group | null>(null);
     const slidesGroupRef = useRef<THREE.Group | null>(null);
     const slideEndsGroupRef = useRef<THREE.Group | null>(null);
+    const wheelsGroupRef = useRef<THREE.Group | null>(null);
     const arrowGroupRef = useRef<THREE.Group | null>(null);
     const mainSceneGroupRef = useRef<THREE.Group | null>(null);
     const hitTestSourceRef = useRef<XRHitTestSource | null>(null);
@@ -253,7 +256,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         renderer.xr.addEventListener('sessionstart', async () => {
             // Scale down the entire scene by 1000 when entering AR
             mainSceneGroup.scale.setScalar(1 / 1000);
-            
+
             // Reset model placement state
             modelPlacedRef.current = false;
             mainSceneGroup.visible = false; // Hide until placed
@@ -279,7 +282,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
             mainSceneGroup.scale.setScalar(1);
             mainSceneGroup.visible = true;
             reticle.visible = false;
-            
+
             // Clean up hit-test source
             if (hitTestSourceRef.current) {
                 hitTestSourceRef.current.cancel();
@@ -319,11 +322,11 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
                 const referenceSpace = renderer.xr.getReferenceSpace();
                 if (referenceSpace) {
                     const hitTestResults = frame.getHitTestResults(hitTestSourceRef.current);
-                    
+
                     if (hitTestResults.length > 0) {
                         const hit = hitTestResults[0];
                         const pose = hit.getPose(referenceSpace);
-                        
+
                         if (pose && reticleRef.current) {
                             reticleRef.current.visible = true;
                             reticleRef.current.matrix.fromArray(pose.transform.matrix);
@@ -345,7 +348,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         return () => {
             renderer.setAnimationLoop(null); // Stop animation loop
             window.removeEventListener("resize", onResize);
-            
+
             // Remove select listener
             const controller = renderer.xr.getController(0);
             controller.removeEventListener('select', onSelect);
@@ -392,6 +395,10 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
             mainSceneGroup.remove(panelGroupRef.current);
             panelGroupRef.current = null;
         }
+        if (textileGroupRef.current) {
+            mainSceneGroup.remove(textileGroupRef.current);
+            textileGroupRef.current = null;
+        }
         if (slidesGroupRef.current) {
             mainSceneGroup.remove(slidesGroupRef.current);
             slidesGroupRef.current = null;
@@ -399,6 +406,10 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         if (slideEndsGroupRef.current) {
             mainSceneGroup.remove(slideEndsGroupRef.current);
             slideEndsGroupRef.current = null;
+        }
+        if (wheelsGroupRef.current) {
+            mainSceneGroup.remove(wheelsGroupRef.current);
+            wheelsGroupRef.current = null;
         }
 
         // Clear arrow indicators (dispose their geometries/materials)
@@ -432,6 +443,17 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         mainSceneGroup.add(panelsGroup);
         panelGroupRef.current = panelsGroup;
 
+        // Render textiles (use same renderer as panels, they share the same structure)
+        const textilesParsed = {
+            ...parsedFile,
+            panels: parsedFile.textiles.map(t => ({ ...t, kind: "panel2" as const }))
+        };
+        const textileGroup = renderPanels(textilesParsed, materialMap, {
+            unitScale: 1
+        });
+        mainSceneGroup.add(textileGroup);
+        textileGroupRef.current = textileGroup;
+
         // Render slides (simple box representations). Use same unitScale as panels/tubes.
         const slidesGroup = renderSlides(parsedFile, materialMap, {
             unitScale: 1,
@@ -450,6 +472,17 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         });
         mainSceneGroup.add(slideEndsGroup);
         slideEndsGroupRef.current = slideEndsGroup;
+
+        // Render wheels (multi-wheel2 components)
+        const wheelsGroup = renderWheels(parsedFile, materialMap, {
+            unitScale: 1,
+            axleRadius: 10,
+            axleLength: 50,
+            wheelRadius: 150,
+            wheelThickness: 15
+        });
+        mainSceneGroup.add(wheelsGroup);
+        wheelsGroupRef.current = wheelsGroup;
 
     }, [parsedFile]);
 

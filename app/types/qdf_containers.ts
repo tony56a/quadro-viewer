@@ -168,5 +168,5 @@ export interface QdfParsedFile {
     clamps: QdfClamp[];
     slides: QdfSlide[];
     slideEnds: QdfSlideEnd[];
-    //wheels: QdfWheel[];
+    wheels: QdfWheel[];
 }

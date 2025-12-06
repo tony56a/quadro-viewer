@@ -11,6 +11,7 @@ import {
     QdfClamp,
     QdfSlide,
     QdfSlideEnd,
+    QdfWheel,
     QdfMaterial,
     QdfGeometry,
     QdfConnectorKind,
@@ -469,8 +470,8 @@ function parsePanelLike(
 
 function parseClampLike(
     line: string,
-    kind: "clamp2" | "slide2" | "slide-end2",
-): QdfClamp | QdfSlide | QdfSlideEnd | null {
+    kind: "clamp2" | "slide2" | "slide-end2" | "multi-wheel2",
+): QdfClamp | QdfSlide | QdfSlideEnd | QdfWheel | null {
     const start = line.indexOf("{");
     const end = line.lastIndexOf("}");
     if (start === -1 || end === -1 || end <= start) return null;
@@ -512,6 +513,8 @@ function parseClampLike(
         return { kind, ...base } as QdfClamp;
     } else if (kind === "slide-end2") {
         return { kind, ...base } as QdfSlideEnd;
+    } else if (kind === "multi-wheel2") {
+        return { kind, ...base } as QdfWheel;
     } else {
         return { kind, ...base } as QdfSlide;
     }
@@ -600,6 +603,12 @@ export function parseQdf(text: string): QdfParsedFile {
             continue;
         }
 
+        if (line.startsWith("multi-wheel2")) {
+            const w = parseClampLike(line, "multi-wheel2");
+            if (w) geometries.push(w);
+            continue;
+        }
+
         // ignore camera2 and anything else for now
     }
 
@@ -613,6 +622,7 @@ export function parseQdf(text: string): QdfParsedFile {
     const clamps: QdfClamp[] = [];
     const slides: QdfSlide[] = [];
     const slideEnds: QdfSlideEnd[] = [];
+    const wheels: QdfWheel[] = [];
 
     for (const g of geometries) {
         switch (g.kind) {
@@ -643,6 +653,9 @@ export function parseQdf(text: string): QdfParsedFile {
             case "slide-end2":
                 slideEnds.push(g);
                 break;
+            case "multi-wheel2":
+                wheels.push(g);
+                break;
             default:
                 break;
         }
@@ -661,6 +674,7 @@ export function parseQdf(text: string): QdfParsedFile {
         clamps,
         slides,
         slideEnds,
+        wheels,
     };
 
     return parsed;
