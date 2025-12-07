@@ -12,6 +12,7 @@ import { renderTubes } from "@/app/lib/renderers/tube_renderer";
 import { renderPanels } from "../lib/renderers/panel_renderer";
 import { renderSlides, renderSlideEnds } from "../lib/renderers/slide_renderer";
 import { renderWheels } from "../lib/renderers/wheel_renderer";
+import { renderClamps } from "../lib/renderers/clamp_renderer";
 
 interface ThreeCanvasProps {
     parsedFile: QdfParsedFile | null;
@@ -85,56 +86,6 @@ function setGlow(
 
 }
 
-function createConnectorArrows(position: THREE.Vector3,
-    raycaster: THREE.Raycaster,
-    tubes: THREE.Group): THREE.Group {
-    const group = new THREE.Group();
-
-    const length = 200;      // arrow length
-    const headLength = 60;  // arrow head
-    const headWidth = 50;
-
-    const axes = [
-        { dir: new THREE.Vector3(1, 0, 0), color: 0xff0000 }, // X
-        { dir: new THREE.Vector3(0, 1, 0), color: 0x00ff00 }, // Y
-        { dir: new THREE.Vector3(0, 0, 1), color: 0x0000ff }, // Z
-
-        { dir: new THREE.Vector3(-1, 0, 0), color: 0xff0000 }, // X
-        { dir: new THREE.Vector3(0, -1, 0), color: 0x00ff00 }, // Y
-        { dir: new THREE.Vector3(0, 0, -1), color: 0x0000ff }, // Z
-    ];
-
-    for (const def of axes) {
-        const dir = def.dir.clone().normalize();
-
-        // Raycast from the connector outward along this arrow direction
-        raycaster.set(position, dir);
-        const hits = raycaster.intersectObjects(tubes.children, true);
-
-        let blocked = false;
-        if (hits.length > 0) {
-            const first = hits[0];
-            if (first.distance <= length / 5) {
-                blocked = true;
-            }
-        }
-
-        if (!blocked) {
-            const arrow = new THREE.ArrowHelper(
-                dir,
-                position,
-                length,
-                def.color,
-                headLength,
-                headWidth
-            );
-            group.add(arrow);
-        }
-    }
-
-    return group;
-}
-
 const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
@@ -152,6 +103,7 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
     const textileGroupRef = useRef<THREE.Group | null>(null);
     const slidesGroupRef = useRef<THREE.Group | null>(null);
     const slideEndsGroupRef = useRef<THREE.Group | null>(null);
+    const clampsGroupRef = useRef<THREE.Group | null>(null);
     const wheelsGroupRef = useRef<THREE.Group | null>(null);
     const arrowGroupRef = useRef<THREE.Group | null>(null);
     const mainSceneGroupRef = useRef<THREE.Group | null>(null);
@@ -407,6 +359,10 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
             mainSceneGroup.remove(slideEndsGroupRef.current);
             slideEndsGroupRef.current = null;
         }
+        if (clampsGroupRef.current) {
+            mainSceneGroup.remove(clampsGroupRef.current);
+            clampsGroupRef.current = null;
+        }
         if (wheelsGroupRef.current) {
             mainSceneGroup.remove(wheelsGroupRef.current);
             wheelsGroupRef.current = null;
@@ -472,6 +428,14 @@ const ThreeCanvas: React.FC<ThreeCanvasProps> = ({ parsedFile, onSelectConnector
         });
         mainSceneGroup.add(slideEndsGroup);
         slideEndsGroupRef.current = slideEndsGroup;
+
+        // Render clamps
+        const clampsGroup = renderClamps(parsedFile, materialMap, {
+            radius: 25,
+            length: 25
+        });
+        mainSceneGroup.add(clampsGroup);
+        clampsGroupRef.current = clampsGroup;
 
         // Render wheels (multi-wheel2 components)
         const wheelsGroup = renderWheels(parsedFile, materialMap, {
