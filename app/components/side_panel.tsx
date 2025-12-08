@@ -146,8 +146,27 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
             }
         }
 
-        // If we get here, none of the URLs worked
-        setFileContents(`Error: Could not find QDF file for "${searchText}" in any of the template sites.`);
+        // If proxy URLs failed, try the fetch-goods endpoint
+        try {
+            const response = await fetch('/api/fetch-goods', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keyword: searchText.trim() }),
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success && result.data) {
+                    setFileContents(result.data);
+                    return;
+                }
+            }
+        } catch (err) {
+            console.debug('Failed to fetch from goods database:', err);
+        }
+
+        // If we get here, none of the methods worked
+        setFileContents(`Error: Could not find QDF file for "${searchText}" in any of the template sites or goods database.`);
     };
 
     const renderParsedView = () => {
