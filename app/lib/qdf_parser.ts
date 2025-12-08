@@ -306,11 +306,27 @@ function parseConnector3Line(line: string): QdfConnector3 | null {
     const flags = parseInt(params[4], 10);
     const reserved = parseInt(params[5], 10);
 
+    // Optional render range fields (last two numbers if present)
+    let renderRangeStart: number | undefined;
+    let renderRangeEnd: number | undefined;
+
+    if (params.length >= 7) {
+        renderRangeStart = parseInt(params[6], 10);
+    }
+    if (params.length >= 8) {
+        renderRangeEnd = parseInt(params[7], 10);
+    }
+
     const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
     const quaternion = decodeQdfQuaternion(
         orientation);
 
     const connectorKind = getConnectorCategory(connectorType);
+
+    // Reject connectors with render range restrictions (only render "always visible" objects)
+    if (renderRangeStart !== undefined) {
+        return null;
+    }
 
     return {
         kind: "connector3",
@@ -325,6 +341,8 @@ function parseConnector3Line(line: string): QdfConnector3 | null {
         variant4: flags,
         connectorKind: connectorKind,
         reserved,
+        renderRangeStart,
+        renderRangeEnd,
     };
 }
 
@@ -351,9 +369,25 @@ function parseConnector45Line(line: string): QdfConnector45 | null {
     const flag1 = parseInt(params[1], 10);
     const flag2 = parseInt(params[2], 10);
 
+    // Optional render range fields
+    let renderRangeStart: number | undefined;
+    let renderRangeEnd: number | undefined;
+
+    if (params.length >= 4) {
+        renderRangeStart = parseInt(params[3], 10);
+    }
+    if (params.length >= 5) {
+        renderRangeEnd = parseInt(params[4], 10);
+    }
+
     const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
     const quaternion = decodeQdfQuaternion(
         orientation);
+
+    // Reject connectors with render range restrictions (only render "always visible" objects)
+    if (renderRangeStart !== undefined) {
+        return null;
+    }
 
     return {
         kind: "connector45_2",
@@ -365,6 +399,8 @@ function parseConnector45Line(line: string): QdfConnector45 | null {
         connectorKind: QdfConnectorKind.FOURTY_FIVE_DEGREE_CONNECTOR,
         flag1,
         flag2,
+        renderRangeStart,
+        renderRangeEnd,
     };
 }
 
@@ -392,12 +428,28 @@ function parseTubeLine(line: string): QdfTube | null {
     const dim2 = parseFloat(params[2]);
     const dim3 = parseFloat(params[3]);
 
+    // Optional render range fields
+    let renderRangeStart: number | undefined;
+    let renderRangeEnd: number | undefined;
+
+    if (params.length >= 5) {
+        renderRangeStart = parseInt(params[4], 10);
+    }
+    if (params.length >= 6) {
+        renderRangeEnd = parseInt(params[5], 10);
+    }
+
     const quaternion = decodeQdfQuaternion(
         orientation);
     const offset = addHalfTubeOffset(dim1, 1, quaternion);
 
     const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
     positionVector.add(offset);
+
+    // Reject tubes with render range restrictions (only render "always visible" objects)
+    if (renderRangeStart !== undefined) {
+        return null;
+    }
 
     return {
         kind: "tube2",
@@ -409,6 +461,8 @@ function parseTubeLine(line: string): QdfTube | null {
         length: dim1,
         dim2,
         dim3,
+        renderRangeStart,
+        renderRangeEnd,
     };
 }
 
@@ -441,10 +495,26 @@ function parsePanelLike(
     const offset1 = parseFloat(params[4]);
     const offset2 = parseFloat(params[5]);
 
+    // Optional render range fields
+    let renderRangeStart: number | undefined;
+    let renderRangeEnd: number | undefined;
+
+    if (params.length >= 7) {
+        renderRangeStart = parseInt(params[6], 10);
+    }
+    if (params.length >= 8) {
+        renderRangeEnd = parseInt(params[7], 10);
+    }
+
     const q = decodeQdfQuaternion(
         orientation
     );
     const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
+
+    // Reject panels with render range restrictions (only render "always visible" objects)
+    if (renderRangeStart !== undefined) {
+        return null;
+    }
 
     const base = {
         id,
@@ -457,6 +527,8 @@ function parsePanelLike(
         dim3,
         offset1,
         offset2,
+        renderRangeStart,
+        renderRangeEnd,
     };
 
     if (kind === "panel2") {
@@ -493,11 +565,27 @@ function parseClampLike(
     const materialId = parseInt(params[0], 10);
     const flag = parseInt(params[1], 10);
 
+    // Optional render range fields
+    let renderRangeStart: number | undefined;
+    let renderRangeEnd: number | undefined;
+
+    if (params.length >= 3) {
+        renderRangeStart = parseInt(params[2], 10);
+    }
+    if (params.length >= 4) {
+        renderRangeEnd = parseInt(params[3], 10);
+    }
+
     const q = decodeQdfQuaternion(
         orientation
     );
 
     const positionVector = new THREE.Vector3(orientation.x, orientation.y, orientation.z);
+
+    // Reject clamps/slides/wheels with render range restrictions (only render "always visible" objects)
+    if (renderRangeStart !== undefined) {
+        return null;
+    }
 
     const base = {
         id,
@@ -507,6 +595,8 @@ function parseClampLike(
 
         materialId,
         flag,
+        renderRangeStart,
+        renderRangeEnd,
     };
 
     if (kind === "clamp2") {

@@ -19,6 +19,12 @@ export interface QdfGeomBase {
 
     /** Orientation as a unit quaternion (Three.js convention). */
     quaternion: { x: number; y: number; z: number; w: number };
+
+    /** Render range start (offset 0x84 in binary). Controls visibility in certain render passes. */
+    renderRangeStart?: number;
+
+    /** Render range end (offset 0x88 in binary). If -1, always visible. Otherwise, object only renders in specific passes. */
+    renderRangeEnd?: number;
 }
 
 export enum QdfConnectorKind {
