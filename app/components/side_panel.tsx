@@ -18,6 +18,7 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
     const [rawText, setRawText] = useState<string>("(no file loaded yet)");
     const [parsedFile, setParsedFile] = useState<QdfParsedFile | null>(null);
     const [searchText, setSearchText] = useState<string>("");
+    const [isLoading, setIsLoading] = useState<boolean>(false);
 
     const dropZoneRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -126,6 +127,8 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
         e.preventDefault();
         if (!searchText.trim()) return;
 
+        setIsLoading(true);
+
         const proxyUrls = [
             `/proxy/qdf/files/qdf/${searchText}.qdf`,
             `/proxy/mynthquadro/quadro/diy_qdf/${searchText}.qdf`,
@@ -138,6 +141,7 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
                 if (response.ok) {
                     const text = await response.text();
                     setFileContents(text);
+                    setIsLoading(false);
                     return;
                 }
             } catch (err) {
@@ -158,6 +162,7 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
                 const result = await response.json();
                 if (result.success && result.data) {
                     setFileContents(result.data);
+                    setIsLoading(false);
                     return;
                 }
             }
@@ -167,6 +172,7 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
 
         // If we get here, none of the methods worked
         setFileContents(`Error: Could not find QDF file for "${searchText}" in any of the template sites or goods database.`);
+        setIsLoading(false);
     };
 
     const renderParsedView = () => {
@@ -271,6 +277,36 @@ const QdfSidePanel: React.FC<QdfSidePanelProps> = ({ onParsed, onHidePanel, clas
 
     return (
         <div id="side-panel" className={className}>
+            {isLoading && (
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000,
+                    borderRadius: '8px',
+                }}>
+                    <div style={{
+                        width: '40px',
+                        height: '40px',
+                        border: '4px solid rgba(92, 200, 255, 0.3)',
+                        borderTop: '4px solid rgba(92, 200, 255, 0.9)',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                    }} />
+                    <style>{`
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    `}</style>
+                </div>
+            )}
             <div className="panel-header">
                 <span>QDF Loader</span>
                 <button
